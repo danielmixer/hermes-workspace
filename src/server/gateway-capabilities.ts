@@ -71,7 +71,6 @@ export let CLAUDE_DASHBOARD_URL = normalizeUrl(
     process.env.CLAUDE_DASHBOARD_URL ||
     'http://127.0.0.1:9119',
 )
-
 /**
  * Update the gateway URL at runtime, persist it, and reset the probe cache
  * so the next call to ensureGatewayProbed() re-detects capabilities.
@@ -365,6 +364,42 @@ export async function dashboardFetch(
     res = await doFetch(true)
   }
   return res
+}
+
+/**
+ * Dashboard fetch for routes explicitly registered as token-authable on the
+ * dashboard side (read-secret plugin's register_token_route()) — currently
+ * /api/sessions and /api/sessions/{id}/messages. If HERMES_DASHBOARD_TOKEN
+ * is set, use it directly instead of scraping the dashboard root HTML for
+ * an ephemeral token — lets these routes work even when the scrape path is
+ * broken (e.g. SSO now gates the root page). HERMES_DASHBOARD_TOKEN goes
+ * stale on every dashboard restart (see .env comment), so a 401 on the
+ * env-token attempt falls back to the scrape-based dashboardFetch path
+ * (which force-refreshes its own token cache on 401) instead of surfacing
+ * a permanent failure. Falls back to dashboardFetch directly when the env
+ * var isn't set. Do not reuse this for dashboard-authenticated calls that
+ * aren't registered as token routes (pairing approval, etc.) — those
+ * deliberately require a live-scraped token and will reject the bearer
+ * token with 401/no_cookie.
+ */
+export async function dashboardSessionsFetch(
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const envToken = process.env.HERMES_DASHBOARD_TOKEN
+  if (envToken) {
+    const requestPath = withDashboardBase(path)
+    const headers = new Headers(init.headers)
+    if (!headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${envToken}`)
+    }
+    const res = await fetch(requestPath, { ...init, headers })
+    if (res.status !== 401) return res
+    // Stale env token — fall back to the scrape-based token path rather
+    // than returning a permanent 401 until someone updates .env by hand.
+    return dashboardFetch(path, init)
+  }
+  return dashboardFetch(path, init)
 }
 
 /**

@@ -98,9 +98,15 @@ export const Route = createFileRoute('/api/history')({
             })
           }
           let messages: Awaited<ReturnType<typeof getMessages>> = []
+          let messagesFetchError: string | null = null
           try {
             messages = await getMessages(sessionKey)
-          } catch {
+          } catch (err) {
+            messagesFetchError = err instanceof Error ? err.message : String(err)
+            console.error(
+              `[api/history] getMessages failed for session ${sessionKey}:`,
+              messagesFetchError,
+            )
             messages = []
           }
 
@@ -125,12 +131,22 @@ export const Route = createFileRoute('/api/history')({
 
           const boundedMessages = limit > 0 ? messages.slice(-limit) : messages
 
+          // TODO(code-review 2026-07-04): source/message below aren't in the
+          // HistoryResponse type and aren't read by any client code yet, and
+          // this endpoint still returns 200 on this path — fetchHistory()
+          // never throws, so historyQuery.error stays null and the chat UI
+          // still can't tell an auth failure from a genuinely empty session.
+          // To actually surface this, either return a non-2xx status here or
+          // teach use-chat-history.ts to check response.source === 'error'.
           return json({
             sessionKey,
             sessionId: sessionKey,
             messages: boundedMessages.map((message, index) =>
               toChatMessage(message, { historyIndex: index }),
             ),
+            ...(messagesFetchError
+              ? { source: 'error', message: messagesFetchError }
+              : {}),
           })
         } catch (err) {
           return json(

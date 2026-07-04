@@ -1,5 +1,6 @@
 import {
   dashboardFetch,
+  dashboardSessionsFetch,
   CLAUDE_DASHBOARD_URL,
 } from './gateway-capabilities'
 
@@ -105,6 +106,13 @@ export type DashboardStatus = {
   [key: string]: unknown
 }
 
+// TODO(code-review 2026-07-04): listSessions/getSessionMessages below
+// duplicate this ok-check+throw+parse block instead of reusing it, and as a
+// result they dropped the `res.status === 204` guard this function has —
+// a 204 from either dashboard route would throw a JSON-parse error instead
+// of resolving gracefully. Consider parameterizing dashboardJson with a
+// fetch implementation (default dashboardFetch) so both call sites can go
+// through it again without losing the static-token behavior.
 async function dashboardJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await dashboardFetch(path, init)
   if (!res.ok) {
@@ -121,9 +129,13 @@ export async function listSessions(limit = 50, offset = 0): Promise<{
   limit: number
   offset: number
 }> {
-  return dashboardJson(
-    `/api/sessions?limit=${limit}&offset=${offset}`,
-  )
+  const path = `/api/sessions?limit=${limit}&offset=${offset}`
+  const res = await dashboardSessionsFetch(path)
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`Hermes Agent dashboard ${path}: ${res.status} ${text}`)
+  }
+  return res.json()
 }
 
 export async function getSession(id: string): Promise<DashboardSession> {
@@ -135,7 +147,13 @@ export async function getSessionMessages(id: string): Promise<{
   session_started?: number
   model?: string
 }> {
-  return dashboardJson(`/api/sessions/${encodeURIComponent(id)}/messages`)
+  const path = `/api/sessions/${encodeURIComponent(id)}/messages`
+  const res = await dashboardSessionsFetch(path)
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`Hermes Agent dashboard ${path}: ${res.status} ${text}`)
+  }
+  return res.json()
 }
 
 export async function searchSessions(q: string): Promise<SessionSearchResponse> {
