@@ -149,8 +149,20 @@ const PROBE_TIMEOUT_MS = 3_000
 const PROBE_TTL_MS = 120_000
 const PROBE_TTL_DISCONNECTED_MS = 15_000
 
-function effectiveProbeTtl(caps: { health: boolean; chatCompletions: boolean }): number {
-  if (caps.health || caps.chatCompletions) return PROBE_TTL_MS
+// Applies the same "recheck soon" logic to a dashboard-only miss. Without
+// this, a single transient dashboard probe failure (event-loop contention,
+// a timed-out fetch racing PROBE_TIMEOUT_MS) gets cached as "unavailable"
+// for the full 120s gateway TTL even though the gateway itself never
+// wavered — every dashboard-backed request 500s for up to 2 minutes over a
+// blip that a plain curl never sees. Keying the short TTL off dashboard
+// availability too means a bad snapshot self-corrects in ~15s instead.
+// See dashboard-flap investigation.
+function effectiveProbeTtl(caps: {
+  health: boolean
+  chatCompletions: boolean
+  dashboard: { available: boolean }
+}): number {
+  if ((caps.health || caps.chatCompletions) && caps.dashboard.available) return PROBE_TTL_MS
   return PROBE_TTL_DISCONNECTED_MS
 }
 const DASHBOARD_TOKEN_REGEX =
