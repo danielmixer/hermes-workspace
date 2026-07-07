@@ -1,6 +1,7 @@
 import {
   dashboardFetch,
   dashboardSessionsFetch,
+  dashboardSkillsFetch,
   CLAUDE_DASHBOARD_URL,
 } from './gateway-capabilities'
 
@@ -196,18 +197,28 @@ export async function forkSession(
 }
 
 export async function getSkills(): Promise<SkillInfo[]> {
-  return dashboardJson('/api/skills')
+  const res = await dashboardSkillsFetch('/api/skills')
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`Hermes Agent dashboard /api/skills: ${res.status} ${text}`)
+  }
+  return res.json()
 }
 
 export async function toggleSkill(
   name: string,
   enabled: boolean,
 ): Promise<{ ok: boolean }> {
-  return dashboardJson('/api/skills/toggle', {
+  const res = await dashboardSkillsFetch('/api/skills/toggle', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, enabled }),
   })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`Hermes Agent dashboard /api/skills/toggle: ${res.status} ${text}`)
+  }
+  return res.json()
 }
 
 export async function getConfig(): Promise<Record<string, unknown>> {

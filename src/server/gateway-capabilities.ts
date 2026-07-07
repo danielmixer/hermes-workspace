@@ -415,6 +415,29 @@ export async function dashboardSessionsFetch(
 }
 
 /**
+ * Dashboard fetch for /api/skills — mirrors dashboardSessionsFetch() exactly.
+ * Uses HERMES_DASHBOARD_TOKEN bearer auth when set, falling back to the
+ * scrape-based path on a 401.
+ */
+export async function dashboardSkillsFetch(
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const envToken = process.env.HERMES_DASHBOARD_TOKEN
+  if (envToken) {
+    const requestPath = withDashboardBase(path)
+    const headers = new Headers(init.headers)
+    if (!headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${envToken}`)
+    }
+    const res = await fetch(requestPath, { ...init, headers })
+    if (res.status !== 401) return res
+    return dashboardFetch(path, init)
+  }
+  return dashboardFetch(path, init)
+}
+
+/**
  * Lightweight fetch helper that targets the gateway base URL
  * (`CLAUDE_API`, e.g. http://127.0.0.1:8645). Used for endpoints that
  * live on the gateway runtime rather than the dashboard, like
